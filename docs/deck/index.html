@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkHealthier — deck</title>
+<style>
+  :root { color-scheme: dark; --green: #40ff5e; --dim: rgba(64,255,94,0.72); --muted: rgba(64,255,94,0.48); --line: rgba(64,255,94,0.24); }
+  html, body { margin: 0; background: #000; color: var(--dim); font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .deck { display: flex; flex-direction: column; }
+  section { min-height: 100vh; box-sizing: border-box; padding: 56px 72px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+  h1 { font-size: 44px; font-weight: 500; color: var(--green); margin: 0 0 12px; letter-spacing: -0.01em; }
+  h2 { font-size: 30px; font-weight: 500; color: var(--green); margin: 0 0 20px; }
+  h3 { font-size: 18px; font-weight: 500; color: var(--green); margin: 18px 0 8px; }
+  p, li { font-size: 18px; line-height: 1.55; max-width: 980px; }
+  .eyebrow { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .cols-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 28px; align-items: start; }
+  table { border-collapse: collapse; width: 100%; max-width: 980px; font-size: 16px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--green); font-weight: 500; }
+  code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 15px; color: var(--green); }
+  pre { background: rgba(64,255,94,0.06); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; overflow-x: auto; max-width: 980px; }
+  .shot { border: 1px solid var(--line); border-radius: 6px; background: #000; display: block; width: 480px; max-width: 100%; image-rendering: auto; }
+  .shot-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  figure { margin: 0; }
+  .flow { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0 8px; }
+  .flow span { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font-size: 15px; }
+  .flow b { color: var(--green); font-weight: 500; }
+  .ok { color: var(--green); }
+  .blocked { color: var(--muted); }
+  .foot { position: fixed; right: 24px; bottom: 16px; font-size: 12px; color: var(--muted); }
+  @media print { section { min-height: auto; height: 100vh; } .foot { display: none; } }
+</style>
+</head>
+<body>
+<div class="deck">
+
+<section>
+  <div class="eyebrow">Rokid Glasses · AIUI 0.17.0 · monochrome green · 480 × 352</div>
+  <h1>WorkHealthier</h1>
+  <p>A desk-health agent for Rokid Glasses: it watches how you hold your head, how far your eyes are from the monitor, and how long you have been sitting, and reminds you on the lens (and out loud) when something needs fixing.</p>
+  <p class="blocked">Repository: github.com/cnYui/WorkHealthier · Studio import directory: <code>agent</code></p>
+</section>
+
+<section>
+  <h2>First, an honest constraint</h2>
+  <p>The request asked for infrared or laser ranging. Neither exists on this platform: AIUI 0.17's device APIs are Bluetooth, Accelerometer, AbsoluteOrientationSensor, Gyroscope and BatteryManager, and the Rokid Glasses hardware carries one 12 MP camera plus an IMU, no ToF module.</p>
+  <table>
+    <tr><th>Need</th><th>What the agent does</th><th>Official basis</th></tr>
+    <tr><td>Posture (head down, head tilt)</td><td>Page-scoped <code>AbsoluteOrientationSensor</code> via <code>enableWorldAwareness()</code>; the rotation-vector sensor already fuses the gyroscope</td><td>Page API docs, <code>samples/gyroscope-test</code></td></tr>
+    <tr><td>Eye-to-screen distance</td><td>One low-resolution photo every 20 s, <code>BarcodeDetector</code> finds a QR marker (<code>WH:50</code>) on the monitor, distance from its apparent size, one-tap calibration</td><td><code>samples/scanner</code> pipeline</td></tr>
+    <tr><td>Sitting too long</td><td>Reminder after 45 minutes of continuous monitoring</td><td>—</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Architecture: one Page, pure logic underneath</h2>
+  <div class="cols">
+    <div>
+      <pre>agent/                    Studio import root
+  app.json                pages + CAMERA permission
+  AGENTS.md               identity, voice routing, limits
+  pages/monitor/index.ink the only Page (UI + orchestration)
+  lib/quat.js             quaternion math, axis convention
+  lib/posture.js          posture state machine
+  lib/distance.js         marker ranging + calibration
+  lib/session.js          clock + sedentary reminder
+  lib/capture.js          photo → decode → detect
+  lib/temple.js           temple input de-duplication
+  lib/demo.js             scripted scenario
+  lib/env.js              runtime info, local settings
+tests/                    42 Node tests (not imported)</pre>
+    </div>
+    <div>
+      <h3>Why this split</h3>
+      <ul>
+        <li>Every threshold, timer and fallback lives in modules that take <code>now</code> as an argument, so behaviour is deterministic and unit-tested.</li>
+        <li>The Page only wires sensors, camera, keys and rendering; it pushes only changed keys to <code>setData</code>.</li>
+        <li>No backend, no network: everything runs on the glasses; calibration and the voice switch persist in <code>localStorage</code>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Posture pipeline</h2>
+  <div class="flow"><span>quaternion <b>[x, y, z, w]</b></span><span>→</span><span>relative to <b>baseline</b> (sit straight, look at screen)</span><span>→</span><span>rotation vector → <b>pitch</b> / <b>roll</b></span><span>→</span><span>EMA smoothing</span><span>→</span><span>level: good / watch / poor</span><span>→</span><span>8 s dwell → <b>alert</b></span></div>
+  <table>
+    <tr><th>Signal</th><th>Watch</th><th>Poor (alert after 8 s)</th><th>Clears</th></tr>
+    <tr><td>Head down / up</td><td>≥ 10°</td><td>≥ 18°</td><td>2 s of recovery; 60 s cooldown after a tap/nod dismiss</td></tr>
+    <tr><td>Head tilt</td><td>≥ 7°</td><td>≥ 12°</td><td>same</td></tr>
+  </table>
+  <p>The baseline is captured 3 s after start and can be re-captured with a tap on the posture tile. The axis map (X = nod, Y = turn, Z = tilt) follows the official diagnostic sample; a wrong sign only swaps the Down/Up label.</p>
+</section>
+
+<section>
+  <h2>Distance pipeline</h2>
+  <div class="flow"><span><b>takePhoto</b> (quality low)</span><span>→</span><span>pure-JS <b>WebP</b> decode → grey pixels</span><span>→</span><span><b>BarcodeDetector</b> QR</span><span>→</span><span>longest side ÷ image width</span><span>→</span><span><b>cm = K · mm / side / 10</b></span></div>
+  <ul>
+    <li><code>K</code> defaults to 0.446 (≈ 96° horizontal field of view) and is replaced by a one-tap calibration at a known distance, which cancels the marker-size error.</li>
+    <li>Too close: under 45 cm for 15 s and at least two samples → alert; 45–52 cm shows "Close"; above 85 cm "Far".</li>
+    <li>Three consecutive misses → "No marker" with the last reading kept; permission denial or a host that rejects timer-driven photos switches to tap-to-measure.</li>
+    <li>The marker page <code>docs/marker.html</code> shows the QR at 30 / 50 / 80 mm with a ruler to check the monitor's physical scale.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>The screen</h2>
+  <div class="shot-row">
+    <figure><img class="shot" src="shots/02-demo-good.png" alt="Monitoring view"><figcaption>Monitoring: two tiles with value + mark (√ △ ▲ ○), detail lines for the focused item, three setting rows, control hint.</figcaption></figure>
+    <figure><img class="shot" src="shots/04-settings-focus.png" alt="Settings row focused"><figcaption>Swipes move a focus frame through five targets; a tap runs the focused action.</figcaption></figure>
+  </div>
+  <table style="margin-top:20px">
+    <tr><th>Temple</th><th>Keys (simulator)</th><th>Effect</th></tr>
+    <tr><td>Tap</td><td>GlobalHook → Enter</td><td>Dismiss the alert, else the focused action (re-baseline · measure · calibrate · voice · demo)</td></tr>
+    <tr><td>Swipe</td><td>GlobalHook → ArrowUp / ArrowDown</td><td>Move focus</td></tr>
+    <tr><td>Double tap · nod</td><td>Backspace (host) · world-awareness nod</td><td>Exit · dismiss the alert</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>Alerts</h2>
+  <div class="shot-row">
+    <figure><img class="shot" src="shots/03-alert-too-close.png" alt="Too close alert"><figcaption>A 2 px dashed frame over the tile area: mark, title, one line of guidance, dismiss hint. One alert at a time (posture, then distance, then sedentary).</figcaption></figure>
+    <div>
+      <ul>
+        <li>Every state uses a label plus a shape, never luminance alone (single green channel).</li>
+        <li>Voice: one short spoken prompt per alert through <code>speechSynthesis</code>, at least 20 s apart, switchable.</li>
+        <li>Chat card (448 × 150): <code>@media (max-height: 240px)</code> keeps only the status line and the two tiles.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Testing ladder</h2>
+  <table>
+    <tr><th>Layer</th><th>Result</th><th>What it proves</th></tr>
+    <tr><td>Unit tests (Node)</td><td class="ok">42 pass</td><td>All pure logic, including a replay of the whole demo script through both state machines</td></tr>
+    <tr><td>Strict project validation</td><td class="ok">exit 0</td><td>Manifest, routes, .ink blocks, claims ledger</td></tr>
+    <tr><td>AIX pack / list / preview</td><td class="ok">pass</td><td>Package contents; layout, focus, tap actions and the demo fallback in the browser Ink runtime</td></tr>
+    <tr><td>AIUI Studio simulation</td><td class="blocked">see status slide</td><td>Host-like keys, chat card, effect preview</td></tr>
+    <tr><td>Physical glasses</td><td class="blocked">not yet</td><td>Sensor data, axis signs, camera policy, decode time, nod, speech</td></tr>
+  </table>
+  <p>The generated audit (<code>docs/aiui-audit.md</code>) keeps every row BLOCKED until signed Studio and device evidence exists; that is by design of the validation skill.</p>
+</section>
+
+<section>
+  <h2>Demo mode</h2>
+  <p>Runtimes without a sensor and camera (the Studio web simulator, the AIX browser preview) drop into a 150-second scripted loop after a 6 s sensor timeout: good → head down → recovered → too close → recovered → head tilt → marker out of view → all good. Every alert can be seen and dismissed without hardware, and the demo row shows the measured tick period.</p>
+  <div class="shot-row">
+    <figure><img class="shot" src="shots/01-baseline.png" alt="Baseline countdown"><figcaption>Startup: baseline countdown while waiting for sensor data; after 6 s without data the page enters demo mode.</figcaption></figure>
+    <div>
+      <h3>In AIUI Studio</h3>
+      <ul>
+        <li>GitHub import of <code>github.com/cnYui/WorkHealthier/tree/main/agent</code> creates the project <code>cnYui/WorkHealthier</code>.</li>
+        <li><code>/debug Run pages/monitor/index</code> opens the Page as a chat card (448 × 150 compact layout); "进入" moves it into the 480 × 352 effect preview.</li>
+        <li>The simulator delivers a constant pose, so posture reads Good at 0°; the camera photo is rejected, so distance stays on Waiting / Stopped until a real device.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Status and next steps</h2>
+  <div class="cols">
+    <div>
+      <h3>Done</h3>
+      <ul>
+        <li>Complete Studio-importable project, English-only, monochrome-green design tokens.</li>
+        <li>Deterministic posture, distance, session and input logic with tests.</li>
+        <li>Demo fallback, calibration flow, marker page, audit matrices.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>To verify on the glasses</h3>
+      <ul>
+        <li><code>enableWorldAwareness()</code> delivering <code>reading</code> events; axis signs.</li>
+        <li>Whether <code>takePhoto()</code> may run from a timer; WebP decode time at low quality.</li>
+        <li>Nod dismissal, speech synthesis volume, readability over bright scenes.</li>
+        <li>Studio review form: tick the camera permission and state its purpose.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div>
+<div class="foot">WorkHealthier · cnYui · 2026-09-12</div>
+</body>
+</html>
