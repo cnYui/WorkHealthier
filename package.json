@@ -1,0 +1,13 @@
+{
+  "name": "workhealthier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WorkHealthier: a Rokid Glasses AIUI agent that watches sitting posture and screen distance.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,1 @@
+{"schemaVersion":1,"scopeClosed":true,"claims":[{"family":"input.voice.unknown","surface":"App","description":"Spoken requests open the monitor Page with mode, demo, or calibrateCm parameters"},{"family":"page.route","surface":"App","description":"The Agent host opens the monitor Page with the requested parameters"}]}

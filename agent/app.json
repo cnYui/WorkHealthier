@@ -1,0 +1,7 @@
+{
+  "pages": ["pages/monitor/index"],
+  "permissions": ["CAMERA"],
+  "window": {
+    "navigationBarTitleText": "健康工位"
+  }
+}
