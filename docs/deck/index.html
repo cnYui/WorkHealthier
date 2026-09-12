@@ -152,14 +152,7 @@ tests/                    42 Node tests (not imported)</pre>
   <p>Runtimes without a sensor and camera (the Studio web simulator, the AIX browser preview) drop into a 150-second scripted loop after a 6 s sensor timeout: good → head down → recovered → too close → recovered → head tilt → marker out of view → all good. Every alert can be seen and dismissed without hardware, and the demo row shows the measured tick period.</p>
   <div class="shot-row">
     <figure><img class="shot" src="shots/01-baseline.png" alt="Baseline countdown"><figcaption>Startup: baseline countdown while waiting for sensor data; after 6 s without data the page enters demo mode.</figcaption></figure>
-    <div>
-      <h3>In AIUI Studio</h3>
-      <ul>
-        <li>GitHub import of <code>github.com/cnYui/WorkHealthier/tree/main/agent</code> creates the project <code>cnYui/WorkHealthier</code>.</li>
-        <li><code>/debug Run pages/monitor/index</code> opens the Page as a chat card (448 × 150 compact layout); "进入" moves it into the 480 × 352 effect preview.</li>
-        <li>The simulator delivers a constant pose, so posture reads Good at 0°; the camera photo is rejected, so distance stays on Waiting / Stopped until a real device.</li>
-      </ul>
-    </div>
+    <figure><img class="shot" src="shots/05-studio-card.png" alt="Studio chat card"><figcaption>AIUI Studio, after the GitHub import of <code>tree/main/agent</code>: <code>/debug Run pages/monitor/index</code> renders the Page as a 448 × 150 chat card in the compact layout. The simulator delivers a constant pose (Good, 0°) and rejects photos, so distance ends on "Stopped" with a retry hint.</figcaption></figure>
   </div>
 </section>
 

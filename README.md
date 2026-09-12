@@ -115,6 +115,6 @@ Requires Node 20+. `tests/` covers all pure logic in `agent/lib/`, including a r
 
 - Local: unit tests, strict structural validation, and AIX pack / list / preview all pass.
 - AIX browser preview: layout, focus movement, tap actions and the automatic demo fallback were checked visually.
-- Studio simulator: can only verify layout, focus, demo mode and the temple key order; the sensor and camera do not exist there.
+- Studio simulator (2026-09-12): the GitHub import and the `/debug` chat card work; the card renders the 448 × 150 compact layout in the `MONITORING` state (`docs/deck/shots/05-studio-card.png`). The simulator delivers one constant pose, so posture reads Good at 0°, and it rejects the camera photo, so distance ends on "Stopped" with a tap-to-retry hint. It can verify layout, focus, demo mode and the temple key order, not real sensor or camera behaviour.
 - Glasses: not verified yet. Still to confirm on hardware: `enableWorldAwareness()` exposing `reading` events on `this.orientationSensor`, the axis signs, whether `takePhoto()` is allowed from a timer outside a user interaction (if not, the Page switches to tap-to-measure by itself), WebP decode time, the nod gesture, and speech synthesis.
 - Before submission, tick the camera permission in Studio's build-and-review form and state its purpose (local marker detection only; photos are neither stored nor uploaded).

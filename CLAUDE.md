@@ -44,6 +44,7 @@
 ## Studio simulator facts (measured on the previous Rokid project, 2026-09-11)
 
 - Temple tap → `GlobalHook` then `Enter`; swipe forward → `GlobalHook` then `ArrowUp`; swipe back → `GlobalHook` then `ArrowDown`; **double tap never reaches agent Pages**. `lib/temple.js` drops the echo and treats a lone `GlobalHook` as a tap after 280 ms.
+- This project, 2026-09-12: the GitHub import (`tree/main/agent`) and the `/debug` chat card work. The card showed `MONITORING`, posture Good (Down 0°, Tilt R 0°) from one constant pose, and distance `Stopped` because the photo was rejected (`docs/deck/shots/05-studio-card.png`). So the simulator does expose the orientation sensor and a camera context, but neither produces real data.
 - Globals present: `LanguageModel`, `SpeechRecognition`, `speechSynthesis`, `SpeechSynthesisUtterance`, `wx.speech`. Missing: `navigator.mediaDevices`, `MediaRecorder`. No IMU data. → the Page auto-enters demo mode when neither a sensor nor a camera is found, or when the sensor stays silent for 6 s (`query.demo === false` disables that).
 - Runtime is QuickJS; `new Date(y, m, d)` is unreliable, use `Date.now()` only.
 - A dynamic class on the `<page>` root is not applied → root has the static class `page`; dynamic classes live on `view`s.
@@ -61,4 +62,5 @@
 ## Verified / not verified
 
 - Verified locally: `npm test` (all pure logic incl. a full demo replay), strict project validation exit 0, `aix pack`/`list` (no `.git`/`.aiui-evidence` entries), `aix preview` layout/focus/tap/demo fallback in the browser.
-- Not verified: everything in Studio and on physical glasses (see README "Status"). Simulator results are not device results; the Skill's release gates need signed device evidence.
+- Verified in Studio (2026-09-12): import, `/debug` chat card in the compact layout (constant pose → Good 0°, photo rejected → Stopped).
+- Not verified: the 480 × 352 effect preview interactions in Studio (swipes, taps, demo fallback are not recorded with screenshots) and everything on physical glasses (see README "Status"). Simulator results are not device results; the Skill's release gates need signed device evidence.
