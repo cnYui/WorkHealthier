@@ -21,8 +21,8 @@ test('demoSample is deterministic and loops', () => {
   assert.equal(a.segmentIndex, 1);
   assert.ok(a.pitchDeg > 20);
   assert.equal(demoSample(-5).segmentIndex, 0);
-  assert.equal(demoLabel(1), '演示：低头看屏幕');
-  assert.equal(demoLabel(99), '演示');
+  assert.equal(demoLabel(1), 'Demo: head down');
+  assert.equal(demoLabel(99), 'Demo');
 });
 
 test('replaying the scenario through the monitors raises each alert type', () => {

@@ -7,8 +7,8 @@
 import { headAnglesFromRelative, normalizeQuaternion, relativeQuaternion } from './quat.js';
 
 export const POSTURE_DEFAULTS = Object.freeze({
-  pitchWarnDeg: 10, // beyond this: "偏" (warn)
-  pitchBadDeg: 18, // beyond this: "差" (bad)
+  pitchWarnDeg: 10, // beyond this: "Watch" (warn)
+  pitchBadDeg: 18, // beyond this: "Poor" (bad)
   rollWarnDeg: 7,
   rollBadDeg: 12,
   dwellMs: 8000, // bad posture must persist this long before an alert

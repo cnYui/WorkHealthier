@@ -21,10 +21,10 @@ export function formatClock(ms) {
 
 export function formatMinutes(ms) {
   const minutes = Math.round(Math.max(0, ms) / 60000);
-  if (minutes < 60) return minutes + ' 分钟';
+  if (minutes < 60) return minutes + ' min';
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return h + ' 小时 ' + (m > 0 ? m + ' 分钟' : '');
+  return h + ' h' + (m > 0 ? ' ' + m + ' min' : '');
 }
 
 export function createSession(options) {

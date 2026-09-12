@@ -16,6 +16,17 @@ export const DEMO_TIMELINE = Object.freeze([
   [135, 150, 1, 0, 70, true] // good again
 ]);
 
+const DEMO_LABELS = Object.freeze([
+  'Demo: good posture',
+  'Demo: head down',
+  'Demo: posture recovered',
+  'Demo: too close to the screen',
+  'Demo: distance recovered',
+  'Demo: head tilted',
+  'Demo: marker out of view',
+  'Demo: all good'
+]);
+
 function segmentAt(sec) {
   for (let i = 0; i < DEMO_TIMELINE.length; i += 1) {
     const s = DEMO_TIMELINE[i];
@@ -44,15 +55,5 @@ export function demoSample(elapsedMs) {
 
 // Human-readable description of what the demo is currently showing.
 export function demoLabel(segmentIndex) {
-  const labels = [
-    '演示：良好坐姿',
-    '演示：低头看屏幕',
-    '演示：姿态恢复',
-    '演示：离屏幕太近',
-    '演示：距离恢复',
-    '演示：歪头',
-    '演示：看不到标记',
-    '演示：一切正常'
-  ];
-  return labels[segmentIndex] || '演示';
+  return DEMO_LABELS[segmentIndex] || 'Demo';
 }

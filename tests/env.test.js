@@ -24,10 +24,10 @@ test('parseRuntimeUserAgent reads the AIUI UA format and tolerates junk', () => 
   assert.equal(info.systemName, 'YodaOS Sprite');
   assert.equal(info.architecture, 'arm64-v8a');
   assert.equal(info.inkVersion, '0.17.2-rc-12');
-  assert.equal(describeRuntime(info), '运行环境：AIUI 0.17.2 · YodaOS Sprite');
+  assert.equal(describeRuntime(info), 'Runtime: AIUI 0.17.2 · YodaOS Sprite');
   const none = parseRuntimeUserAgent('Mozilla/5.0');
   assert.equal(none.aiuiVersion, '');
-  assert.equal(describeRuntime(none), '运行环境：未知');
+  assert.equal(describeRuntime(none), 'Runtime: unknown');
   assert.equal(parseRuntimeUserAgent(undefined).aiuiVersion, '');
 });
 

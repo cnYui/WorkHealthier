@@ -1,7 +1,7 @@
 <script def>
 {
-  "navigationBarTitleText": "健康工位",
-  "description": "打开坐姿与屏幕距离监测面板。用户说“开始坐姿监测”“提醒我别离屏幕太近”“打开健康工位”“我总是低头”时调用；说“演示一下”时传 demo=true；说“在 60 厘米处校准”时传 calibrateCm=60。",
+  "navigationBarTitleText": "WorkHealthier",
+  "description": "Open the posture and screen-distance monitor. Invoke when the user says things like start posture monitoring, watch my posture, remind me to keep my distance from the screen, I keep looking down, or open WorkHealthier. Pass demo=true for 'show me a demo'; pass calibrateCm for 'calibrate at 60 cm'.",
   "schema": {
     "data": {
       "type": "object",
@@ -10,17 +10,17 @@
           "type": "string",
           "enum": ["both", "posture", "distance"],
           "default": "both",
-          "description": "监测内容：both 同时监测坐姿和屏幕距离，posture 只看头部姿态，distance 只看屏幕距离。"
+          "description": "What to monitor: both posture and screen distance, posture only (head pose), or distance only."
         },
         "demo": {
           "type": "boolean",
-          "description": "为 true 时用脚本数据演示各种提醒状态，不使用传感器和相机。"
+          "description": "When true, play scripted data through every alert state instead of using the sensor and camera."
         },
         "calibrateCm": {
           "type": "integer",
           "minimum": 30,
           "maximum": 120,
-          "description": "用户准备用来校准距离的已知距离（厘米），例如 60。"
+          "description": "Known eye-to-marker distance in centimetres the user will calibrate at, for example 60."
         }
       }
     }
@@ -67,12 +67,32 @@ const FOCUS_COUNT = 5;
 const MARK = { off: '○', ok: '√', warn: '△', bad: '▲' };
 
 const POSTURE_ALERTS = {
-  'pitch-down': { title: '低头太久了', body: '请抬头、收下巴，让视线与屏幕齐平', speech: '低头太久了，请抬头放松颈部' },
-  'pitch-up': { title: '仰头太久了', body: '请放低视线，或把屏幕调低一些', speech: '仰头太久了，请放低视线' },
-  roll: { title: '头部歪斜', body: '请把头摆正，肩膀放平', speech: '头歪了，请把头摆正' }
+  'pitch-down': {
+    title: 'Head down too long',
+    body: 'Lift your head, tuck your chin, eyes level with the screen',
+    speech: 'Head down too long. Please lift your head and relax your neck.'
+  },
+  'pitch-up': {
+    title: 'Head up too long',
+    body: 'Lower your gaze, or lower the screen a little',
+    speech: 'Head up too long. Please lower your gaze.'
+  },
+  roll: {
+    title: 'Head tilted',
+    body: 'Straighten your head and level your shoulders',
+    speech: 'Your head is tilted. Please straighten it.'
+  }
 };
-const DISTANCE_ALERT = { title: '离屏幕太近', body: '请向后靠，保持 50 厘米以上', speech: '离屏幕太近了，请向后靠一点' };
-const SEDENTARY_ALERT = { title: '已久坐 45 分钟', body: '起身活动两分钟，看看远处', speech: '已经坐了四十五分钟，起来活动一下吧' };
+const DISTANCE_ALERT = {
+  title: 'Too close to the screen',
+  body: 'Lean back and keep at least 50 cm',
+  speech: 'You are too close to the screen. Please lean back.'
+};
+const SEDENTARY_ALERT = {
+  title: 'Sitting for 45 minutes',
+  body: 'Stand up for two minutes and look into the distance',
+  speech: 'You have been sitting for forty-five minutes. Time to stand up and move.'
+};
 
 function parseQuery(query) {
   const input = query && typeof query === 'object' && !Array.isArray(query) ? query : {};
@@ -100,39 +120,39 @@ function formatCm(value) {
 }
 
 function ageText(now, at) {
-  if (typeof at !== 'number') return '尚未测量';
+  if (typeof at !== 'number') return 'not measured yet';
   const sec = Math.max(0, Math.round((now - at) / 1000));
-  return sec < 60 ? sec + ' 秒前' : Math.round(sec / 60) + ' 分钟前';
+  return sec < 60 ? sec + ' s ago' : Math.round(sec / 60) + ' min ago';
 }
 
 function initialData() {
   return {
-    phaseChip: '准备中',
+    phaseChip: 'STARTING',
     clock: '00:00',
     postureClass: 'tile tile-posture tone-off is-focus',
     postureMark: MARK.off,
-    postureLabel: '准备中',
-    postureDetail: '正在连接姿态传感器',
+    postureLabel: 'Starting',
+    postureDetail: 'Connecting the pose sensor',
     distanceClass: 'tile tile-distance tone-off',
     distanceMark: MARK.off,
     distanceLabel: '-- cm',
-    distanceDetail: '需要屏幕上的标记',
+    distanceDetail: 'Needs the marker on your monitor',
     detail1: '',
     detail2: '',
     calibrateClass: 'row',
-    calibrateText: '在 60 cm 处校准距离',
-    calibrateState: '未校准',
+    calibrateText: 'Calibrate distance at 60 cm',
+    calibrateState: 'Not calibrated',
     voiceClass: 'row',
-    voiceState: '开',
+    voiceState: 'On',
     demoClass: 'row',
-    demoState: '关',
+    demoState: 'Off',
     alertClass: 'alert alert-off',
     alertMark: MARK.bad,
     alertTitle: '',
     alertBody: '',
     hint: '',
     toast: '',
-    envText: '运行环境：未知'
+    envText: 'Runtime: unknown'
   };
 }
 
@@ -154,8 +174,10 @@ export default {
       onLoneGlobalHook: () => this._primaryAction()
     });
 
+    this._view = {};
     this._visible = false;
     this._tickTimer = null;
+    this._tickStats = { count: 0, lastAt: 0, periodMs: 0 };
     this._captureTimer = null;
     this._toastTimer = null;
     this._autoDemoTimer = null;
@@ -182,15 +204,15 @@ export default {
     this._lastSpokenAt = -Infinity;
 
     const runtime = parseRuntimeUserAgent(readUserAgent());
-    this.setData(Object.assign(initialData(), {
+    this._push(Object.assign(initialData(), {
       envText: describeRuntime(runtime),
-      calibrateText: '在 ' + this._settings.calibrationCm + ' cm 处校准距离',
-      calibrateState: this._settings.kNorm !== null ? '已校准' : '未校准',
-      voiceState: this._settings.voice ? '开' : '关'
+      calibrateText: 'Calibrate distance at ' + this._settings.calibrationCm + ' cm',
+      calibrateState: this._settings.kNorm !== null ? 'Calibrated' : 'Not calibrated',
+      voiceState: this._settings.voice ? 'On' : 'Off'
     }));
 
     if (this._query.demo === true) {
-      this._enterDemo('按要求进入演示模式');
+      this._enterDemo('Demo mode requested');
       return;
     }
     const sensorOk = this._query.mode === 'distance' ? false : this._startSensors();
@@ -203,7 +225,7 @@ export default {
     if (!sensorOk && !cameraOk && this._query.demo !== false) {
       this._autoDemoTimer = setTimeout(() => {
         this._autoDemoTimer = null;
-        if (!this._demo.active) this._enterDemo('当前环境没有传感器和相机，进入演示模式');
+        if (!this._demo.active) this._enterDemo('No sensor or camera here; entering demo mode');
       }, AUTO_DEMO_DELAY_MS);
     } else if (!sensorOk && cameraOk) {
       // Distance-only: the session starts on the first tap (camera needs a user interaction).
@@ -293,7 +315,7 @@ export default {
       }
     }
     if (!sensor) {
-      if (!this._sensorError) this._sensorError = '当前环境未提供姿态传感器';
+      if (!this._sensorError) this._sensorError = 'No pose sensor in this runtime';
       return false;
     }
     this._sensor = sensor;
@@ -306,7 +328,7 @@ export default {
       this._readingCount += 1;
     };
     this._onSensorError = (event) => {
-      this._sensorError = event && event.message ? String(event.message) : '传感器读取失败';
+      this._sensorError = event && event.message ? String(event.message) : 'Sensor read failed';
       this._lastQuaternion = null;
     };
     try {
@@ -350,7 +372,7 @@ export default {
         : undefined;
       if (!ctx) {
         this._cameraState = 'unavailable';
-        this._cameraError = '当前环境未提供相机';
+        this._cameraError = 'No camera in this runtime';
         return false;
       }
       this._cameraCtx = ctx;
@@ -361,7 +383,7 @@ export default {
     }
     if (typeof BarcodeDetector === 'undefined') {
       this._cameraState = 'unavailable';
-      this._cameraError = '当前环境未提供条码识别';
+      this._cameraError = 'No barcode detector in this runtime';
       return false;
     }
     try {
@@ -412,9 +434,9 @@ export default {
       this._capturing = false;
       this._captureFailures = 0;
       this._lastCaptureAt = now;
-      this._lastCaptureInfo = sample.imageWidth + '×' + sample.imageHeight + ' · 拍照 ' +
-        Math.round(sample.timings.photoMs) + ' ms · 解码 ' + Math.round(sample.timings.decodeMs) +
-        ' ms · 识别 ' + Math.round(sample.timings.detectMs) + ' ms';
+      this._lastCaptureInfo = sample.imageWidth + '×' + sample.imageHeight + ' · photo ' +
+        Math.round(sample.timings.photoMs) + ' ms · decode ' + Math.round(sample.timings.decodeMs) +
+        ' ms · detect ' + Math.round(sample.timings.detectMs) + ' ms';
       if (this._calibrationPending) {
         this._calibrationPending = false;
         if (sample.found) {
@@ -422,14 +444,16 @@ export default {
           if (k !== null) {
             this._settings.kNorm = k;
             saveSettings(storageOrNull(), this._settings);
-            this._toast('已校准：K = ' + k.toFixed(3));
+            this._toast('Calibrated: K = ' + k.toFixed(3));
           }
         } else {
-          this._toast('未找到标记，请把标记放在 ' + this._settings.calibrationCm + ' cm 处再试');
+          this._toast('No marker found; place it ' + this._settings.calibrationCm + ' cm away and try again');
         }
       } else {
         this._distance.update(sample, now);
-        if (reason === 'tap') this._toast(sample.found ? '测得 ' + formatCm(this._distance.snapshot().cm) : '未找到标记');
+        if (reason === 'tap') {
+          this._toast(sample.found ? 'Measured ' + formatCm(this._distance.snapshot().cm) : 'No marker found');
+        }
       }
       this._render(now);
     }).catch((error) => {
@@ -442,17 +466,17 @@ export default {
       if (code === 'denied') {
         this._cameraState = 'denied';
         this._stopCaptureLoop();
-        this._toast('相机权限被拒绝，距离测量已停止');
+        this._toast('Camera permission denied; distance measuring stopped');
       } else if (code === 'needs-tap') {
         this._cameraState = 'manual';
         this._stopCaptureLoop();
-        this._toast('自动拍照被拒绝：单击距离卡片手动测量');
+        this._toast('Automatic photos were rejected: tap the distance tile to measure');
       } else if (this._captureFailures >= MAX_CAPTURE_FAILURES) {
         this._cameraState = 'stopped';
         this._stopCaptureLoop();
-        this._toast('连续 ' + MAX_CAPTURE_FAILURES + ' 次测量失败，已停止自动测量');
+        this._toast(MAX_CAPTURE_FAILURES + ' failures in a row; automatic measuring stopped');
       } else {
-        this._toast('测量失败：' + this._cameraError);
+        this._toast('Measurement failed: ' + this._cameraError);
       }
       this._render(now);
     });
@@ -495,7 +519,7 @@ export default {
       this._phase = this._cameraState === 'ready' ? 'monitoring' : 'ready';
     }
     this._startCaptureLoop();
-    this._toast(sensorOk ? '已退出演示，3 秒后记录基准姿态' : '已退出演示：' + (this._sensorError || '无传感器'));
+    this._toast(sensorOk ? 'Left demo; posture baseline in 3 s' : 'Left demo: ' + (this._sensorError || 'no sensor'));
     this._render(now);
   },
 
@@ -512,6 +536,14 @@ export default {
 
   _tick() {
     const now = Date.now();
+    const stats = this._tickStats;
+    if (stats.lastAt > 0) {
+      const period = now - stats.lastAt;
+      stats.periodMs = stats.periodMs === 0 ? period : stats.periodMs + (period - stats.periodMs) * 0.2;
+    }
+    stats.lastAt = now;
+    stats.count += 1;
+
     if (this._demo.active) {
       const sample = demoSample(now - this._demo.startedAt);
       this._demo.label = demoLabel(sample.segmentIndex);
@@ -537,14 +569,14 @@ export default {
           // The runtime exposed a sensor object but never delivered a reading
           // (the browser simulator does this): treat it as unavailable.
           this._releaseSensors();
-          this._sensorError = '传感器 ' + Math.round(SENSOR_TIMEOUT_MS / 1000) + ' 秒内没有数据';
+          this._sensorError = 'No sensor data within ' + Math.round(SENSOR_TIMEOUT_MS / 1000) + ' s';
           this._phase = this._cameraState === 'ready' ? 'monitoring' : 'ready';
           this._baselineDueAt = null;
           if (this._query.demo !== false) {
-            this._enterDemo('传感器没有数据，进入演示模式');
+            this._enterDemo('Sensor gave no data; entering demo mode');
             return;
           }
-          this._toast(this._sensorError + '，单击坐姿卡片重试');
+          this._toast(this._sensorError + '; tap the posture tile to retry');
         }
       }
       if (this._phase === 'monitoring' && this._lastQuaternion && this._posture.hasBaseline()) {
@@ -567,7 +599,7 @@ export default {
     const now = Date.now();
     if (this._focus === FOCUS_POSTURE) {
       if (this._demo.active) {
-        this._toast('演示模式：姿态由脚本生成');
+        this._toast('Demo mode: posture is scripted');
       } else if (!this._sensor) {
         if (this._startSensors()) {
           if (!this._session.isStarted()) this._beginSession();
@@ -575,18 +607,18 @@ export default {
             this._phase = 'calibrating';
             this._baselineDueAt = now + BASELINE_COUNTDOWN_MS;
           }
-          this._toast('传感器已连接，3 秒后记录基准姿态');
+          this._toast('Sensor connected; posture baseline in 3 s');
         } else {
-          this._toast(this._sensorError || '姿态传感器不可用');
+          this._toast(this._sensorError || 'Pose sensor unavailable');
         }
       } else {
         this._phase = 'calibrating';
         this._baselineDueAt = now + BASELINE_COUNTDOWN_MS;
-        this._toast('请坐直、正视屏幕，3 秒后记录基准姿态');
+        this._toast('Sit up straight, look at the screen; baseline in 3 s');
       }
     } else if (this._focus === FOCUS_DISTANCE) {
       if (this._demo.active) {
-        this._toast('演示模式：距离由脚本生成');
+        this._toast('Demo mode: distance is scripted');
       } else if (this._cameraState === 'ready' || this._cameraState === 'manual') {
         if (!this._session.isStarted()) this._session.start(now);
         if (this._phase === 'ready') this._phase = 'monitoring';
@@ -598,28 +630,28 @@ export default {
         this._captureOnce('tap');
         this._startCaptureLoop();
       } else {
-        this._toast(this._cameraError || '相机不可用');
+        this._toast(this._cameraError || 'Camera unavailable');
       }
     } else if (this._focus === FOCUS_CALIBRATE) {
       if (this._demo.active) {
         this._distance.calibrate(0.05, DISTANCE_DEFAULTS.defaultMarkerMm, this._settings.calibrationCm);
-        this._toast('演示模式：模拟校准完成');
+        this._toast('Demo mode: calibration simulated');
       } else if (this._cameraState === 'ready' || this._cameraState === 'manual' || this._cameraState === 'stopped') {
         this._cameraState = this._cameraState === 'stopped' ? 'ready' : this._cameraState;
         this._calibrationPending = true;
-        this._toast('正在校准，请保持在 ' + this._settings.calibrationCm + ' cm 处正视标记');
+        this._toast('Calibrating: stay ' + this._settings.calibrationCm + ' cm from the marker and look at it');
         this._captureOnce('calibrate');
       } else {
-        this._toast(this._cameraError || '相机不可用，无法校准');
+        this._toast(this._cameraError || 'Camera unavailable; cannot calibrate');
       }
     } else if (this._focus === FOCUS_VOICE) {
       this._settings.voice = !this._settings.voice;
       saveSettings(storageOrNull(), this._settings);
-      this._toast(this._settings.voice ? '语音提醒已开启' : '语音提醒已关闭');
-      if (this._settings.voice) this._speak('语音提醒已开启', true);
+      this._toast(this._settings.voice ? 'Voice reminders on' : 'Voice reminders off');
+      if (this._settings.voice) this._speak('Voice reminders are on', true);
     } else if (this._focus === FOCUS_DEMO) {
       if (this._demo.active) this._exitDemo();
-      else this._enterDemo('进入演示模式');
+      else this._enterDemo('Entering demo mode');
       return;
     }
     this._render(now);
@@ -636,16 +668,16 @@ export default {
     this._distance.dismissAlert(now);
     this._session.dismissReminder(now);
     this._alertKey = '';
-    this._toast('已关闭提醒');
+    this._toast('Alert dismissed');
     this._render(now);
   },
 
   _toast(text) {
     if (this._toastTimer !== null) clearTimeout(this._toastTimer);
-    this.setData({ toast: text });
+    this._push({ toast: text });
     this._toastTimer = setTimeout(() => {
       this._toastTimer = null;
-      this.setData({ toast: '' });
+      this._push({ toast: '' });
     }, TOAST_MS);
   },
 
@@ -662,6 +694,20 @@ export default {
   },
 
   // ---- view model --------------------------------------------------------
+
+  // Sends only the keys whose value changed since the last push.
+  _push(patch) {
+    const changed = {};
+    let any = false;
+    Object.keys(patch).forEach((key) => {
+      if (this._view[key] !== patch[key]) {
+        this._view[key] = patch[key];
+        changed[key] = patch[key];
+        any = true;
+      }
+    });
+    if (any) this.setData(changed);
+  },
 
   _currentAlert() {
     const p = this._posture.snapshot();
@@ -685,21 +731,21 @@ export default {
 
     // Posture tile
     let postureTone = 'off';
-    let postureLabel = '未就绪';
-    let postureDetail = this._sensorError || '正在连接姿态传感器';
+    let postureLabel = 'Not ready';
+    let postureDetail = this._sensorError || 'Connecting the pose sensor';
     if (demo || (this._phase === 'monitoring' && p.hasBaseline)) {
       postureTone = p.level === 'off' ? 'off' : p.level;
-      postureLabel = p.level === 'ok' ? '良好' : p.level === 'warn' ? '注意' : p.level === 'bad' ? '不佳' : '等待';
-      const pitchWord = p.pitch >= 0 ? '低头' : '仰头';
-      const rollWord = p.roll >= 0 ? '右歪' : '左歪';
+      postureLabel = p.level === 'ok' ? 'Good' : p.level === 'warn' ? 'Watch' : p.level === 'bad' ? 'Poor' : 'Waiting';
+      const pitchWord = p.pitch >= 0 ? 'Down' : 'Up';
+      const rollWord = p.roll >= 0 ? 'Tilt R' : 'Tilt L';
       postureDetail = pitchWord + ' ' + formatDeg(p.pitch) + ' · ' + rollWord + ' ' + formatDeg(p.roll);
     } else if (this._phase === 'calibrating') {
       const left = Math.max(0, Math.ceil(((this._baselineDueAt || now) - now) / 1000));
-      postureLabel = '校准 ' + left;
-      postureDetail = this._lastQuaternion ? '请坐直、正视屏幕' : (this._sensorError || '等待传感器数据');
+      postureLabel = 'Baseline ' + left;
+      postureDetail = this._lastQuaternion ? 'Sit up straight, look at the screen' : (this._sensorError || 'Waiting for sensor data');
     } else if (this._query.mode === 'distance') {
-      postureLabel = '未启用';
-      postureDetail = '本次只监测屏幕距离';
+      postureLabel = 'Off';
+      postureDetail = 'Distance only this session';
     }
 
     // Distance tile
@@ -707,47 +753,47 @@ export default {
     let distanceLabel = '-- cm';
     let distanceDetail = '';
     if (this._query.mode === 'posture') {
-      distanceLabel = '未启用';
-      distanceDetail = '本次只监测坐姿';
+      distanceLabel = 'Off';
+      distanceDetail = 'Posture only this session';
     } else if (demo || this._cameraState === 'ready' || this._cameraState === 'manual' || this._cameraState === 'stopped') {
-      const calText = d.calibrated ? '已校准' : '估算';
+      const calText = d.calibrated ? 'calibrated' : 'estimate';
       if (d.markerState === 'found' && d.cm !== null) {
         distanceLabel = formatCm(d.cm);
         distanceTone = d.level === 'too-close' ? 'bad' : d.level === 'close' ? 'warn' : 'ok';
-        const levelText = d.level === 'too-close' ? '太近' : d.level === 'close' ? '偏近' : d.level === 'far' ? '偏远' : '适中';
+        const levelText = d.level === 'too-close' ? 'Too close' : d.level === 'close' ? 'Close' : d.level === 'far' ? 'Far' : 'Good';
         distanceDetail = levelText + ' · ' + calText;
       } else if (d.markerState === 'missing') {
-        distanceLabel = '未见标记';
-        distanceDetail = d.lastCm !== null ? '上次 ' + formatCm(d.lastCm) : '请让相机看到屏幕上的标记';
+        distanceLabel = 'No marker';
+        distanceDetail = d.lastCm !== null ? 'Last ' + formatCm(d.lastCm) : 'Show the marker on your monitor';
       } else if (this._capturing) {
-        distanceLabel = '测量中';
-        distanceDetail = '拍照并识别标记';
+        distanceLabel = 'Measuring';
+        distanceDetail = 'Taking a photo and finding the marker';
       } else if (this._cameraState === 'manual') {
-        distanceLabel = '待测量';
-        distanceDetail = '单击距离卡片测量';
+        distanceLabel = 'Tap to measure';
+        distanceDetail = 'Automatic photos are not allowed here';
       } else if (this._cameraState === 'stopped') {
-        distanceLabel = '已停止';
-        distanceDetail = '单击距离卡片重试';
+        distanceLabel = 'Stopped';
+        distanceDetail = 'Tap the distance tile to retry';
       } else if (this._phase === 'ready') {
-        distanceLabel = '待开始';
-        distanceDetail = '单击距离卡片开始';
+        distanceLabel = 'Tap to start';
+        distanceDetail = 'Tap the distance tile to begin';
       } else {
-        distanceLabel = '等待';
-        distanceDetail = '每 20 秒测量一次';
+        distanceLabel = 'Waiting';
+        distanceDetail = 'One photo every 20 s';
       }
     } else if (this._cameraState === 'denied') {
-      distanceLabel = '无权限';
-      distanceDetail = '相机权限被拒绝';
+      distanceLabel = 'No access';
+      distanceDetail = 'Camera permission denied';
     } else {
-      distanceLabel = '不可用';
-      distanceDetail = this._cameraError || '相机不可用';
+      distanceLabel = 'Unavailable';
+      distanceDetail = this._cameraError || 'Camera unavailable';
     }
 
     // Phase chip and clock
-    let phaseChip = '就绪';
-    if (demo) phaseChip = '演示';
-    else if (this._phase === 'calibrating') phaseChip = '校准中';
-    else if (this._phase === 'monitoring') phaseChip = '监测中';
+    let phaseChip = 'READY';
+    if (demo) phaseChip = 'DEMO';
+    else if (this._phase === 'calibrating') phaseChip = 'BASELINE';
+    else if (this._phase === 'monitoring') phaseChip = 'MONITORING';
     const clock = formatClock(s.elapsedMs);
 
     // Alert
@@ -764,36 +810,36 @@ export default {
     let detail2 = '';
     if (focus === FOCUS_POSTURE) {
       const c = this._posture.config;
-      detail1 = '低头/仰头 ≥ ' + c.pitchBadDeg + '° 或歪头 ≥ ' + c.rollBadDeg + '° 持续 ' + Math.round(c.dwellMs / 1000) + ' 秒提醒';
-      detail2 = '良好占比 ' + goodPercent(p.stats) + '% · 提醒 ' + p.stats.alerts + ' 次' +
-        (demo ? ' · ' + this._demo.label : ' · 采样 ' + this._readingCount);
+      detail1 = 'Alert when head down/up ≥ ' + c.pitchBadDeg + '° or tilt ≥ ' + c.rollBadDeg + '° for ' + Math.round(c.dwellMs / 1000) + ' s';
+      detail2 = 'Good posture ' + goodPercent(p.stats) + '% · alerts ' + p.stats.alerts +
+        (demo ? ' · ' + this._demo.label : ' · samples ' + this._readingCount);
     } else if (focus === FOCUS_DISTANCE) {
       const c = this._distance.config;
-      detail1 = '小于 ' + c.tooCloseCm + ' cm 持续 ' + Math.round(c.dwellMs / 1000) + ' 秒提醒 · 每 ' + Math.round(CAPTURE_INTERVAL_MS / 1000) + ' 秒拍照一次';
+      detail1 = 'Alert under ' + c.tooCloseCm + ' cm for ' + Math.round(c.dwellMs / 1000) + ' s · one photo every ' + Math.round(CAPTURE_INTERVAL_MS / 1000) + ' s';
       detail2 = demo
-        ? '提醒 ' + d.stats.alerts + ' 次 · ' + this._demo.label
-        : '上次测量 ' + ageText(now, this._lastCaptureAt) + (this._lastCaptureInfo ? ' · ' + this._lastCaptureInfo : '');
+        ? 'Alerts ' + d.stats.alerts + ' · ' + this._demo.label
+        : 'Last measured ' + ageText(now, this._lastCaptureAt) + (this._lastCaptureInfo ? ' · ' + this._lastCaptureInfo : '');
     } else if (focus === FOCUS_CALIBRATE) {
-      detail1 = '把标记放在离眼睛 ' + this._settings.calibrationCm + ' cm 处，正视它后单击';
-      detail2 = '当前 K = ' + d.kNorm.toFixed(3) + (d.calibrated ? '（已校准）' : '（按相机视场估算）');
+      detail1 = 'Place the marker ' + this._settings.calibrationCm + ' cm from your eyes, look at it, then tap';
+      detail2 = 'K = ' + d.kNorm.toFixed(3) + (d.calibrated ? ' (calibrated)' : ' (estimated from the camera field of view)');
     } else if (focus === FOCUS_VOICE) {
-      detail1 = '提醒出现时朗读一句简短提示';
-      detail2 = '当前：' + (this._settings.voice ? '开' : '关') + ' · 两次朗读至少间隔 20 秒';
+      detail1 = 'Speaks a short prompt when an alert appears';
+      detail2 = 'Now: ' + (this._settings.voice ? 'on' : 'off') + ' · at least 20 s between prompts';
     } else {
-      detail1 = '没有传感器和相机时，用脚本数据演示各种提醒';
-      detail2 = '当前：' + (demo ? '开 · ' + this._demo.label : '关');
+      detail1 = 'Scripted data for runtimes without a sensor or camera';
+      detail2 = 'Now: ' + (demo ? 'on · ' + this._demo.label : 'off') + ' · tick ' + Math.round(this._tickStats.periodMs) + ' ms';
     }
 
     // Hint
     let hint = '';
-    if (alert) hint = '单击或点头：关闭提醒 · 双击：退出';
-    else if (focus === FOCUS_POSTURE) hint = (this._sensor || demo ? '单击：重设基准姿态' : '单击：重新连接传感器') + ' · 前滑/后滑：切换 · 双击：退出';
-    else if (focus === FOCUS_DISTANCE) hint = '单击：立即测量距离 · 前滑/后滑：切换 · 双击：退出';
-    else if (focus === FOCUS_CALIBRATE) hint = '单击：开始校准 · 前滑/后滑：切换 · 双击：退出';
-    else if (focus === FOCUS_VOICE) hint = '单击：切换语音提醒 · 前滑/后滑：切换 · 双击：退出';
-    else hint = '单击：切换演示模式 · 前滑/后滑：切换 · 双击：退出';
+    if (alert) hint = 'Tap or nod: dismiss · Double tap: exit';
+    else if (focus === FOCUS_POSTURE) hint = (this._sensor || demo ? 'Tap: reset posture baseline' : 'Tap: reconnect sensor') + ' · Swipe: switch · Double tap: exit';
+    else if (focus === FOCUS_DISTANCE) hint = 'Tap: measure now · Swipe: switch · Double tap: exit';
+    else if (focus === FOCUS_CALIBRATE) hint = 'Tap: calibrate · Swipe: switch · Double tap: exit';
+    else if (focus === FOCUS_VOICE) hint = 'Tap: toggle voice reminders · Swipe: switch · Double tap: exit';
+    else hint = 'Tap: toggle demo mode · Swipe: switch · Double tap: exit';
 
-    this.setData({
+    this._push({
       phaseChip,
       clock,
       postureClass: joinClass(['tile', 'tile-posture', 'tone-' + postureTone, focus === FOCUS_POSTURE && 'is-focus']),
@@ -807,12 +853,12 @@ export default {
       detail1,
       detail2,
       calibrateClass: joinClass(['row', focus === FOCUS_CALIBRATE && 'is-focus']),
-      calibrateText: '在 ' + this._settings.calibrationCm + ' cm 处校准距离',
-      calibrateState: d.calibrated ? '已校准' : '未校准',
+      calibrateText: 'Calibrate distance at ' + this._settings.calibrationCm + ' cm',
+      calibrateState: d.calibrated ? 'Calibrated' : 'Not calibrated',
       voiceClass: joinClass(['row', focus === FOCUS_VOICE && 'is-focus']),
-      voiceState: this._settings.voice ? '开' : '关',
+      voiceState: this._settings.voice ? 'On' : 'Off',
       demoClass: joinClass(['row', focus === FOCUS_DEMO && 'is-focus']),
-      demoState: demo ? '开' : '关',
+      demoState: demo ? 'On' : 'Off',
       alertClass: joinClass(['alert', alert ? 'alert-on' : 'alert-off']),
       alertTitle: alert ? alert.title : '',
       alertBody: alert ? alert.body : '',
@@ -825,7 +871,7 @@ export default {
 <page class="page">
   <view class="shell">
     <view class="topline">
-      <text class="eyebrow">健康工位</text>
+      <text class="eyebrow">WORKHEALTHIER</text>
       <view class="topline-right">
         <text class="chip">{{phaseChip}}</text>
         <text class="clock">{{clock}}</text>
@@ -835,7 +881,7 @@ export default {
     <view class="tiles">
       <view class="{{postureClass}}">
         <view class="tile-head">
-          <text class="tile-name">坐姿</text>
+          <text class="tile-name">POSTURE</text>
           <text class="tile-mark">{{postureMark}}</text>
         </view>
         <text class="tile-value">{{postureLabel}}</text>
@@ -843,7 +889,7 @@ export default {
       </view>
       <view class="{{distanceClass}}">
         <view class="tile-head">
-          <text class="tile-name">屏幕距离</text>
+          <text class="tile-name">SCREEN DISTANCE</text>
           <text class="tile-mark">{{distanceMark}}</text>
         </view>
         <text class="tile-value">{{distanceLabel}}</text>
@@ -862,11 +908,11 @@ export default {
         <text class="row-state">{{calibrateState}}</text>
       </view>
       <view class="{{voiceClass}}">
-        <text class="row-text">语音提醒</text>
+        <text class="row-text">Voice reminders</text>
         <text class="row-state">{{voiceState}}</text>
       </view>
       <view class="{{demoClass}}">
-        <text class="row-text">演示模式</text>
+        <text class="row-text">Demo mode</text>
         <text class="row-state">{{demoState}}</text>
       </view>
     </view>
@@ -882,7 +928,7 @@ export default {
         <text class="alert-title">{{alertTitle}}</text>
       </view>
       <text class="alert-body">{{alertBody}}</text>
-      <text class="alert-hint">单击镜腿或点头关闭</text>
+      <text class="alert-hint">Tap the temple or nod to dismiss</text>
     </view>
   </view>
 </page>
@@ -933,6 +979,7 @@ export default {
   border-radius: 4px;
   font-size: 11px;
   line-height: 14px;
+  letter-spacing: 0.04em;
   color: rgba(64, 255, 94, 0.72);
 }
 
@@ -989,8 +1036,9 @@ export default {
 }
 
 .tile-name {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 16px;
+  letter-spacing: 0.06em;
   color: rgba(64, 255, 94, 0.48);
 }
 
@@ -1002,10 +1050,13 @@ export default {
 
 .tile-value {
   margin-top: 2px;
-  font-size: 28px;
-  line-height: 34px;
+  font-size: 26px;
+  line-height: 32px;
   font-weight: 500;
   color: #40ff5e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tile-detail {
@@ -1013,6 +1064,9 @@ export default {
   font-size: 12px;
   line-height: 16px;
   color: rgba(64, 255, 94, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .detail {

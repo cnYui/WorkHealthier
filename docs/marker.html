@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>健康工位 · 屏幕距离标记</title>
+<title>WorkHealthier · Screen distance marker</title>
 <style>
   :root { color-scheme: light; }
-  body { margin: 0; padding: 24px; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #ffffff; color: #222; }
+  body { margin: 0; padding: 24px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #ffffff; color: #222; }
   h1 { font-size: 20px; margin: 0 0 8px; }
   p { max-width: 640px; line-height: 1.6; margin: 6px 0; }
   .controls { margin: 16px 0; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
@@ -20,27 +20,27 @@
 </style>
 </head>
 <body>
-  <h1>健康工位 · 屏幕距离标记</h1>
-  <p>把这个页面显示在你的显示器上（或打印出来贴在显示器边框），眼镜相机每 20 秒拍一张照片，识别二维码并按它在画面中的大小估算眼睛到屏幕的距离。二维码内容为 <code>WH:&lt;毫米&gt;</code>，眼镜端据此得知标记的标称边长。</p>
-  <p>标记越大，远距离越稳定；50 mm 适合 40～90 cm。屏幕物理尺寸随显示器 DPI 变化，所以显示后请用下面的标尺对照真实尺子，或在眼镜里做一次“在 60 cm 处校准”，校准后标记尺寸误差会被抵消。</p>
+  <h1>WorkHealthier · Screen distance marker</h1>
+  <p>Show this page on your monitor (or print it and stick it on the monitor bezel). The glasses camera takes a photo every 20 seconds, finds the QR code, and estimates the eye-to-screen distance from its apparent size. The QR payload is <code>WH:&lt;millimetres&gt;</code>, which tells the glasses the marker's nominal side length.</p>
+  <p>A larger marker is more stable at longer distances; 50 mm suits 40–90 cm. The physical size on screen depends on your monitor's DPI, so compare the ruler below with a real ruler, or simply run "Calibrate distance at 60 cm" on the glasses once: calibration cancels any marker-size error.</p>
   <div class="controls">
-    <label>标称边长
+    <label>Nominal side
       <select id="size">
         <option value="30">30 mm</option>
         <option value="50" selected>50 mm</option>
         <option value="80">80 mm</option>
       </select>
     </label>
-    <label>显示缩放 <input id="scale" type="range" min="50" max="200" value="100"> <span id="scaleText">100%</span></label>
+    <label>Display scale <input id="scale" type="range" min="50" max="200" value="100"> <span id="scaleText">100%</span></label>
   </div>
   <div class="stage">
     <div>
       <img id="marker" class="marker" src="marker/marker-50mm.svg" alt="WH:50 marker">
-      <div class="note" id="markerNote">当前：WH:50，显示尺寸 50 mm × 50 mm</div>
+      <div class="note" id="markerNote">Now: WH:50, displayed at 50 mm × 50 mm</div>
     </div>
     <div>
       <div class="ruler"><span style="left:0">0</span><span style="left:50%">5 cm</span><span style="left:100%">10 cm</span></div>
-      <div class="note">这条标尺应为 10 cm。若和真实尺子不符，调整“显示缩放”直到一致，标记的物理尺寸就正确了。</div>
+      <div class="note">This ruler should measure 10 cm. If it does not match a real ruler, adjust "Display scale" until it does; the marker then has the correct physical size.</div>
     </div>
   </div>
   <script>
@@ -57,7 +57,7 @@
       marker.style.height = (mm * factor) + 'mm';
       document.querySelector('.ruler').style.width = (100 * factor) + 'mm';
       scaleText.textContent = scale.value + '%';
-      note.textContent = '当前：WH:' + mm + '，显示尺寸 ' + (mm * factor).toFixed(0) + ' mm × ' + (mm * factor).toFixed(0) + ' mm';
+      note.textContent = 'Now: WH:' + mm + ', displayed at ' + (mm * factor).toFixed(0) + ' mm × ' + (mm * factor).toFixed(0) + ' mm';
     }
     size.addEventListener('change', apply);
     scale.addEventListener('input', apply);

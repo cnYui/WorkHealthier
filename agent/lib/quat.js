@@ -92,7 +92,7 @@ export function quaternionFromAxisAngle(axis, angleDeg) {
   return normalizeQuaternion([axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(half)]);
 }
 
-// Device-frame convention used by this project (see README "轴向约定"):
+// Device-frame convention used by this project (see README "Axis convention"):
 // X = lateral axis (rotation = pitch, nodding), Y = vertical axis (yaw,
 // turning), Z = fore-aft axis (roll, tilting the head sideways). The sign of
 // `pitchDownSign` decides which rotation direction counts as "looking down";

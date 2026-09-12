@@ -18,10 +18,10 @@ export function parseRuntimeUserAgent(userAgent) {
 }
 
 export function describeRuntime(info) {
-  if (!info || !info.aiuiVersion) return '运行环境：未知';
+  if (!info || !info.aiuiVersion) return 'Runtime: unknown';
   const parts = ['AIUI ' + info.aiuiVersion];
   if (info.systemName) parts.push(info.systemName);
-  return '运行环境：' + parts.join(' · ');
+  return 'Runtime: ' + parts.join(' · ');
 }
 
 export function readUserAgent() {

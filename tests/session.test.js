@@ -8,9 +8,9 @@ test('formatClock and formatMinutes', () => {
   assert.equal(formatClock(3600000 + 61000), '1:01:01');
   assert.equal(formatClock(-5), '00:00');
   assert.equal(formatClock(undefined), '00:00');
-  assert.equal(formatMinutes(90000), '2 分钟');
-  assert.equal(formatMinutes(3600000), '1 小时 ');
-  assert.equal(formatMinutes(3900000), '1 小时 5 分钟');
+  assert.equal(formatMinutes(90000), '2 min');
+  assert.equal(formatMinutes(3600000), '1 h');
+  assert.equal(formatMinutes(3900000), '1 h 5 min');
 });
 
 test('elapsed time excludes paused intervals', () => {

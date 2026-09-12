@@ -1,6 +1,6 @@
-# WorkHealthier · 健康工位 — workspace notes for Claude
+# WorkHealthier — workspace notes for Claude
 
-> This folder is the root of the `cnYui/WorkHealthier` repository; the AIUI Studio import root is its `agent/` subdirectory. UI text and docs are Chinese; code identifiers and comments are English.
+> This folder is the root of the `cnYui/WorkHealthier` repository; the AIUI Studio import root is its `agent/` subdirectory. **Everything in this project is English-only** (UI strings, docs, comments, deck) by the user's explicit request, even though the user writes in Chinese.
 
 ## Where things live
 
@@ -11,6 +11,7 @@
 | `tests/` | `npm test` (Node 20+, `node --test`); not imported into Studio |
 | `docs/aiui-audit.md` | Generated UX/capability audit; regenerate after every change under `agent/` (see below) |
 | `docs/marker.html`, `docs/marker/` | QR marker shown on the monitor for distance estimation (payload `WH:<mm>`) |
+| `docs/deck/` | HTML slide deck with screenshots |
 | `artifacts/` | Ignored by git: `aix pack` output and `aix preview --html-out` page |
 | `C:\Users\yui\.claude\skills\rokid-aiui-agent` | Installed Skill with the validation scripts in `scripts/` |
 | `D:\CodeWorkSpace\rokid-aiui-agent-skill` | The Skill's repository |
@@ -28,17 +29,22 @@
 1. Edit `agent/`, then `npm test` and
    `python C:/Users/yui/.claude/skills/rokid-aiui-agent/scripts/validate_aiui_project.py agent --repository-root . --target-version 0.17.0 --strict`
 2. Regenerate the audit (all rows BLOCKED until signed Studio/device evidence exists):
-   `python C:/Users/yui/.claude/skills/rokid-aiui-agent/scripts/inventory_aiui_capabilities.py agent --target-version 0.17.0 --repository-root . > /tmp/inventory.json`, run the generator kept in the session scratchpad (or rebuild it from `docs/aiui-audit.md`'s shape), then
+   `python C:/Users/yui/.claude/skills/rokid-aiui-agent/scripts/inventory_aiui_capabilities.py agent --target-version 0.17.0 --repository-root . > <tmp>/inventory.json`, then `python docs/tools/gen_audit.py <tmp>/inventory.json docs/aiui-audit.md`, then
    `python C:/Users/yui/.claude/skills/rokid-aiui-agent/scripts/validate_aiui_audit.py docs/aiui-audit.md --repository-root . --import-root agent` → exit 2 (valid, blocked) is the expected result without a trust policy.
 3. `git commit` + `git push origin main`
 4. Studio (`https://aiui.rokid.com`): top-left **New Agent** menu → **GitHub Import** → `https://github.com/cnYui/WorkHealthier/tree/main/agent` → Confirm. Re-importing the same URL updates the project in place; a different URL creates a second project. The import field keeps the previous URL; set it as a form value rather than clearing it with the keyboard.
-5. Chat: `/debug` + "运行 pages/monitor/index" → inline card → **Enter** → Effect Preview (480 × 352). Right-hand Device Simulation panel: four temple buttons, microphone. Log panel shows `console.log`.
+5. Chat: `/debug` + a request to run `pages/monitor/index` → inline card → **Enter** → Effect Preview (480 × 352). Right-hand Device Simulation panel: four temple buttons, microphone. Log panel shows `console.log`.
 6. Keep the browser pane visible while Studio works: with the pane hidden the page stalls (`visibilityState = hidden`, no rAF frames), imports get stuck unpacking and the preview stops rendering.
+
+## AIX browser preview (measured 2026-09-12)
+
+- `aix preview agent --html-out artifacts/preview.html` renders the Page in a 480 × 352 canvas with ←/Enter/↑/↓ buttons; serve `artifacts/` with `python -m http.server` and open it.
+- The web runtime exposes `enableWorldAwareness` and a camera context but delivers no sensor readings, so the Page's 6 s sensor timeout (`SENSOR_TIMEOUT_MS`) drops it into demo mode. Before `_render` diffed its `setData` payload, the 500 ms tick visibly lagged (values converged over tens of seconds); the diffing fix is in `_push()`. The demo row's detail line shows the measured tick period.
 
 ## Studio simulator facts (measured on the previous Rokid project, 2026-09-11)
 
 - Temple tap → `GlobalHook` then `Enter`; swipe forward → `GlobalHook` then `ArrowUp`; swipe back → `GlobalHook` then `ArrowDown`; **double tap never reaches agent Pages**. `lib/temple.js` drops the echo and treats a lone `GlobalHook` as a tap after 280 ms.
-- Globals present: `LanguageModel`, `SpeechRecognition`, `speechSynthesis`, `SpeechSynthesisUtterance`, `wx.speech`. Missing: `navigator.mediaDevices`, `MediaRecorder`. No IMU data. → the Page auto-enters demo mode after 1.5 s when neither a sensor nor a camera is found (`query.demo === false` disables that).
+- Globals present: `LanguageModel`, `SpeechRecognition`, `speechSynthesis`, `SpeechSynthesisUtterance`, `wx.speech`. Missing: `navigator.mediaDevices`, `MediaRecorder`. No IMU data. → the Page auto-enters demo mode when neither a sensor nor a camera is found, or when the sensor stays silent for 6 s (`query.demo === false` disables that).
 - Runtime is QuickJS; `new Date(y, m, d)` is unreliable, use `Date.now()` only.
 - A dynamic class on the `<page>` root is not applied → root has the static class `page`; dynamic classes live on `view`s.
 - `ink:for` inside a toggled `ink:if` does not re-render → this Page has no `ink:for` and toggles the alert with a class (`alert-off { display: none }`).
@@ -48,11 +54,11 @@
 ## Design decisions
 
 - One Page, five focus targets cycled with swipes (posture tile, distance tile, calibrate row, voice row, demo row); tap = context action; any active alert makes tap/nod a dismiss. `Enter`/`ArrowUp`/`ArrowDown` are `preventDefault`ed; `Backspace` keeps the host default.
-- Posture is relative to a baseline captured 3 s after start (and re-captured on tap on the posture tile). Axis map and sign in `lib/quat.js` (`DEFAULT_AXIS_MAP`) are **unverified on hardware**; a wrong sign only swaps the 低头/仰头 label.
+- Posture is relative to a baseline captured 3 s after start (and re-captured on tap on the posture tile). Axis map and sign in `lib/quat.js` (`DEFAULT_AXIS_MAP`) are **unverified on hardware**; a wrong sign only swaps the Down/Up label.
 - Distance formula `cm = K * markerMm / sideNorm / 10`; `K` defaults to 0.446 (≈96° HFOV) and is replaced by the 60 cm calibration (persisted in `localStorage` key `workhealthier.settings.v1`).
-- Monochrome green tokens: `#40ff5e` values/focus, 72% body text, 48% secondary, 32%/24% lines, ≤12% fills; 1 px lines, focus = border + inset box-shadow (visually 2 px) so the layout does not shift; alert = 2 px dashed frame; state marks √ △ ▲ ○ (GB2312 glyphs).
+- Monochrome green tokens: `#40ff5e` values/focus, 72% body text, 48% secondary, 32%/24% lines, ≤12% fills; 1 px lines, focus = border + inset box-shadow (visually 2 px) so the layout does not shift; alert = 2 px dashed frame; state marks √ △ ▲ ○.
 
 ## Verified / not verified
 
-- Verified locally: `npm test` (all pure logic incl. a full demo replay), strict project validation exit 0, `aix pack`/`list` (no `.git`/`.aiui-evidence` entries), `aix preview --html-out`.
-- Not verified: everything in Studio and on physical glasses (see README “状态”). Simulator results are not device results; the Skill's release gates need signed device evidence.
+- Verified locally: `npm test` (all pure logic incl. a full demo replay), strict project validation exit 0, `aix pack`/`list` (no `.git`/`.aiui-evidence` entries), `aix preview` layout/focus/tap/demo fallback in the browser.
+- Not verified: everything in Studio and on physical glasses (see README "Status"). Simulator results are not device results; the Skill's release gates need signed device evidence.
