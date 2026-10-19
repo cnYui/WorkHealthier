@@ -97,12 +97,18 @@ export function quaternionFromAxisAngle(axis, angleDeg) {
 // turning), Z = fore-aft axis (roll, tilting the head sideways). The sign of
 // `pitchDownSign` decides which rotation direction counts as "looking down";
 // it only affects labels, never whether a deviation is detected.
+//
+// The official samples/gyroscope-test moves its crosshair up for +X and left
+// for +Y, which fixes a right-handed frame with X = right, Y = up and
+// Z = toward the wearer. In that frame +X looks up (so pitchDownSign = -1) and
+// tilting the head to the right is a rotation about -Z (so rollRightSign = -1).
+// The Z sign follows from the right-handed rule; the sample does not test it.
 export const DEFAULT_AXIS_MAP = Object.freeze({
   pitch: 'x',
   yaw: 'y',
   roll: 'z',
   pitchDownSign: -1,
-  rollRightSign: 1
+  rollRightSign: -1
 });
 
 export function headAnglesFromRelative(rel, axisMap) {

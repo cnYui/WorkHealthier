@@ -38,6 +38,7 @@ import { demoSample, demoLabel } from '../../lib/demo.js';
 import { captureMarkerSample, captureErrorCode } from '../../lib/capture.js';
 import { decodeWebP } from '../../lib/webp.js';
 import { DEFAULT_AXIS_MAP } from '../../lib/quat.js';
+import { createSensorHub, describeSensors } from '../../lib/sensors.js';
 import {
   describeRuntime,
   loadSettings,
@@ -49,10 +50,11 @@ import {
 
 const TICK_MS = 500;
 const BASELINE_COUNTDOWN_MS = 3000;
+const BASELINE_STILL_MS = 600; // the gyroscope must see the head still this long
+const BASELINE_MAX_WAIT_MS = 6000; // extra wait for stillness before capturing anyway
 const CAPTURE_INTERVAL_MS = 20000;
 const DEMO_DISTANCE_INTERVAL_MS = 2000;
 const AUTO_DEMO_DELAY_MS = 1500;
-const SENSOR_TIMEOUT_MS = 6000;
 const TOAST_MS = 2500;
 const SPEECH_GAP_MS = 20000;
 const MAX_CAPTURE_FAILURES = 3;
@@ -60,9 +62,10 @@ const MAX_CAPTURE_FAILURES = 3;
 const FOCUS_POSTURE = 0;
 const FOCUS_DISTANCE = 1;
 const FOCUS_CALIBRATE = 2;
-const FOCUS_VOICE = 3;
-const FOCUS_DEMO = 4;
-const FOCUS_COUNT = 5;
+const FOCUS_SENSORS = 3;
+const FOCUS_VOICE = 4;
+const FOCUS_DEMO = 5;
+const FOCUS_COUNT = 6;
 
 const MARK = { off: '○', ok: '√', warn: '△', bad: '▲' };
 
@@ -142,6 +145,8 @@ function initialData() {
     calibrateClass: 'row',
     calibrateText: 'Calibrate distance at 60 cm',
     calibrateState: 'Not calibrated',
+    sensorClass: 'row',
+    sensorState: 'ORI off · GYR off · ACC off',
     voiceClass: 'row',
     voiceState: 'On',
     demoClass: 'row',
@@ -184,13 +189,16 @@ export default {
     this._focus = FOCUS_POSTURE;
     this._phase = 'ready'; // ready | calibrating | monitoring
     this._baselineDueAt = null;
-    this._sensor = null;
-    this._sensorOwned = false; // true when this page created a standalone sensor
-    this._sensorStartedAt = 0;
-    this._sensorError = '';
-    this._lastQuaternion = null;
-    this._lastReadingAt = null;
-    this._readingCount = 0;
+    this._hub = createSensorHub({
+      page: this,
+      now: () => Date.now(),
+      log: (message) => console.log('[WH] ' + message),
+      AbsoluteOrientationSensor: typeof AbsoluteOrientationSensor !== 'undefined' ? AbsoluteOrientationSensor : undefined,
+      Gyroscope: typeof Gyroscope !== 'undefined' ? Gyroscope : undefined,
+      Accelerometer: typeof Accelerometer !== 'undefined' ? Accelerometer : undefined
+    });
+    this._poseSource = ''; // 'ori' | 'accel' once a pose source has delivered
+    this._sensorNote = '';
     this._cameraCtx = null;
     this._cameraState = 'unknown'; // unknown | ready | unavailable | denied | manual | stopped
     this._cameraError = '';
@@ -292,75 +300,63 @@ export default {
 
   // ---- sensors -----------------------------------------------------------
 
-  _startSensors() {
+  // Starts the orientation sensor, the gyroscope and (when needed) the
+  // accelerometer through the sensor hub; see lib/sensors.js for the fallback
+  // chain. Returns true when at least one pose source may deliver data.
+  _startSensors(probe) {
     this._releaseSensors();
-    let sensor = null;
-    try {
-      if (typeof this.enableWorldAwareness === 'function') {
-        this.enableWorldAwareness();
-        if (this.orientationSensor && typeof this.orientationSensor.addEventListener === 'function') {
-          sensor = this.orientationSensor;
-        }
-      }
-    } catch (error) {
-      this._sensorError = String(error);
-    }
-    if (!sensor && typeof AbsoluteOrientationSensor !== 'undefined') {
-      try {
-        sensor = new AbsoluteOrientationSensor({ frequency: 30 });
-        this._sensorOwned = true;
-      } catch (error) {
-        this._sensorError = String(error);
-        sensor = null;
-      }
-    }
-    if (!sensor) {
-      if (!this._sensorError) this._sensorError = 'No pose sensor in this runtime';
-      return false;
-    }
-    this._sensor = sensor;
-    this._sensorStartedAt = Date.now();
-    this._onReading = () => {
-      const q = sensor.quaternion;
-      if (!q) return;
-      this._lastQuaternion = [q[0], q[1], q[2], q[3]];
-      this._lastReadingAt = Date.now();
-      this._readingCount += 1;
-    };
-    this._onSensorError = (event) => {
-      this._sensorError = event && event.message ? String(event.message) : 'Sensor read failed';
-      this._lastQuaternion = null;
-    };
-    try {
-      sensor.addEventListener('reading', this._onReading);
-      sensor.addEventListener('error', this._onSensorError);
-      if (this._sensorOwned) sensor.start();
-    } catch (error) {
-      this._sensorError = String(error);
-      this._releaseSensors();
-      return false;
-    }
-    this._sensorError = '';
-    return true;
+    this._poseSource = '';
+    const ok = this._hub.start({ probe: probe === true });
+    this._sensorNote = ok ? '' : this._firstSensorError() || 'No pose sensor in this runtime';
+    return ok;
+  },
+
+  _firstSensorError() {
+    const status = this._hub.status();
+    return [status.ori.error, status.accel.error, status.gyro.error].find(Boolean) || '';
   },
 
   _releaseSensors() {
-    const sensor = this._sensor;
-    if (sensor) {
-      try {
-        if (this._onReading) sensor.removeEventListener('reading', this._onReading);
-        if (this._onSensorError) sensor.removeEventListener('error', this._onSensorError);
-        if (this._sensorOwned && typeof sensor.stop === 'function') sensor.stop();
-      } catch (_) {}
+    this._hub.stop();
+    this._poseSource = '';
+  },
+
+  // Remembers which source feeds the posture; when the source changes under an
+  // existing baseline the angles are no longer comparable, so re-baseline.
+  _trackPoseSource(pose, now) {
+    if (!pose || pose.source === this._poseSource) return;
+    const previous = this._poseSource;
+    this._poseSource = pose.source;
+    if (previous !== '' && this._posture.hasBaseline()) {
+      this._posture.reset();
+      this._phase = 'calibrating';
+      this._baselineDueAt = now + BASELINE_COUNTDOWN_MS;
+      this._toast('Pose source: ' + (pose.source === 'ori' ? 'head orientation' : 'accelerometer') + '; baseline in 3 s');
     }
-    if (!this._sensorOwned && sensor && typeof this.disableWorldAwareness === 'function') {
-      try {
-        this.disableWorldAwareness();
-      } catch (_) {}
+  },
+
+  // The head must be still (gyroscope) and the orientation settled before a
+  // baseline is captured; after BASELINE_MAX_WAIT_MS it is captured anyway.
+  _baselineReady(now) {
+    const still = this._hub.isHeadStill(BASELINE_STILL_MS);
+    const stable = this._hub.orientationStable();
+    const held = still === false || stable === false;
+    return !held || now >= this._baselineDueAt + BASELINE_MAX_WAIT_MS;
+  },
+
+  _captureBaseline(pose, now) {
+    let ok = false;
+    if (pose.source === 'ori') {
+      ok = this._posture.setBaseline(pose.quaternion, now);
+    } else if (pose.source === 'accel') {
+      ok = pose.tilt.setBaseline() && this._posture.setAngleBaseline(now);
     }
-    this._sensor = null;
-    this._sensorOwned = false;
-    this._lastQuaternion = null;
+    if (!ok) return false;
+    this._phase = 'monitoring';
+    this._baselineDueAt = null;
+    this._startCaptureLoop();
+    if (this._cameraState === 'ready') this._captureOnce('baseline');
+    return true;
   },
 
   // ---- camera ------------------------------------------------------------
@@ -519,7 +515,7 @@ export default {
       this._phase = this._cameraState === 'ready' ? 'monitoring' : 'ready';
     }
     this._startCaptureLoop();
-    this._toast(sensorOk ? 'Left demo; posture baseline in 3 s' : 'Left demo: ' + (this._sensorError || 'no sensor'));
+    this._toast(sensorOk ? 'Left demo; posture baseline in 3 s' : 'Left demo: ' + (this._sensorNote || 'no sensor'));
     this._render(now);
   },
 
@@ -559,28 +555,35 @@ export default {
         }, now);
       }
     } else {
-      if (this._phase === 'calibrating' && this._baselineDueAt !== null && now >= this._baselineDueAt) {
-        if (this._lastQuaternion && this._posture.setBaseline(this._lastQuaternion, now)) {
-          this._phase = 'monitoring';
-          this._baselineDueAt = null;
-          this._startCaptureLoop();
-          if (this._cameraState === 'ready') this._captureOnce('baseline');
-        } else if (this._lastQuaternion === null && now - this._sensorStartedAt >= SENSOR_TIMEOUT_MS) {
-          // The runtime exposed a sensor object but never delivered a reading
-          // (the browser simulator does this): treat it as unavailable.
-          this._releaseSensors();
-          this._sensorError = 'No sensor data within ' + Math.round(SENSOR_TIMEOUT_MS / 1000) + ' s';
+      const sensing = this._query.mode !== 'distance';
+      if (sensing) this._hub.update();
+      const pose = sensing ? this._hub.pose() : null;
+      if (pose) this._trackPoseSource(pose, now);
+      if (sensing && this._phase === 'calibrating' && this._baselineDueAt !== null && now >= this._baselineDueAt) {
+        if (pose) {
+          if (this._baselineReady(now)) this._captureBaseline(pose, now);
+        } else if (!this._hub.hasPendingSource()) {
+          // Every sensor stayed silent (the browser simulator exposes sensor
+          // objects that never deliver a reading): treat them as unavailable.
+          this._sensorNote = this._firstSensorError() || 'No pose data from any sensor';
           this._phase = this._cameraState === 'ready' ? 'monitoring' : 'ready';
           this._baselineDueAt = null;
+          this._releaseSensors();
           if (this._query.demo !== false) {
-            this._enterDemo('Sensor gave no data; entering demo mode');
+            this._enterDemo('Sensors gave no data; entering demo mode');
             return;
           }
-          this._toast(this._sensorError + '; tap the posture tile to retry');
+          this._toast(this._sensorNote + '; tap the posture tile to retry');
         }
       }
-      if (this._phase === 'monitoring' && this._lastQuaternion && this._posture.hasBaseline()) {
-        this._posture.updateQuaternion(this._lastQuaternion, now, DEFAULT_AXIS_MAP);
+      if (this._phase === 'monitoring' && pose && this._posture.hasBaseline()) {
+        if (pose.source === 'ori') {
+          this._posture.updateQuaternion(pose.quaternion, now, DEFAULT_AXIS_MAP);
+        } else {
+          const rel = pose.tilt.relative();
+          if (rel) this._posture.updateAngles(rel.pitch, rel.roll, now);
+          else this._posture.tick(now);
+        }
       } else {
         this._posture.tick(now);
       }
@@ -600,7 +603,7 @@ export default {
     if (this._focus === FOCUS_POSTURE) {
       if (this._demo.active) {
         this._toast('Demo mode: posture is scripted');
-      } else if (!this._sensor) {
+      } else if (!this._hub.pose() && !this._hub.hasPendingSource()) {
         if (this._startSensors()) {
           if (!this._session.isStarted()) this._beginSession();
           else {
@@ -609,7 +612,7 @@ export default {
           }
           this._toast('Sensor connected; posture baseline in 3 s');
         } else {
-          this._toast(this._sensorError || 'Pose sensor unavailable');
+          this._toast(this._sensorNote || 'Pose sensor unavailable');
         }
       } else {
         this._phase = 'calibrating';
@@ -643,6 +646,21 @@ export default {
         this._captureOnce('calibrate');
       } else {
         this._toast(this._cameraError || 'Camera unavailable; cannot calibrate');
+      }
+    } else if (this._focus === FOCUS_SENSORS) {
+      if (this._demo.active) {
+        this._toast('Demo mode: the sensors are not running');
+      } else if (this._query.mode === 'distance') {
+        this._toast('Distance only this session; no head sensors');
+      } else if (this._startSensors(true)) {
+        if (!this._session.isStarted()) this._beginSession();
+        else {
+          this._phase = 'calibrating';
+          this._baselineDueAt = now + BASELINE_COUNTDOWN_MS;
+        }
+        this._toast('Sensor check: orientation, gyroscope, accelerometer');
+      } else {
+        this._toast(this._sensorNote || 'No head sensor available');
       }
     } else if (this._focus === FOCUS_VOICE) {
       this._settings.voice = !this._settings.voice;
@@ -732,7 +750,7 @@ export default {
     // Posture tile
     let postureTone = 'off';
     let postureLabel = 'Not ready';
-    let postureDetail = this._sensorError || 'Connecting the pose sensor';
+    let postureDetail = this._sensorNote || 'Connecting the pose sensor';
     if (demo || (this._phase === 'monitoring' && p.hasBaseline)) {
       postureTone = p.level === 'off' ? 'off' : p.level;
       postureLabel = p.level === 'ok' ? 'Good' : p.level === 'warn' ? 'Watch' : p.level === 'bad' ? 'Poor' : 'Waiting';
@@ -741,8 +759,12 @@ export default {
       postureDetail = pitchWord + ' ' + formatDeg(p.pitch) + ' · ' + rollWord + ' ' + formatDeg(p.roll);
     } else if (this._phase === 'calibrating') {
       const left = Math.max(0, Math.ceil(((this._baselineDueAt || now) - now) / 1000));
-      postureLabel = 'Baseline ' + left;
-      postureDetail = this._lastQuaternion ? 'Sit up straight, look at the screen' : (this._sensorError || 'Waiting for sensor data');
+      const poseLive = this._hub.pose() !== null;
+      const holding = poseLive && left === 0 && !this._baselineReady(now);
+      postureLabel = holding ? 'Hold still' : 'Baseline ' + left;
+      postureDetail = holding
+        ? 'Waiting for the head to settle'
+        : poseLive ? 'Sit up straight, look at the screen' : (this._sensorNote || 'Waiting for sensor data');
     } else if (this._query.mode === 'distance') {
       postureLabel = 'Off';
       postureDetail = 'Distance only this session';
@@ -806,13 +828,18 @@ export default {
     }
 
     // Detail lines by focus
+    const sensorStatus = this._hub.status();
+    const sensorText = describeSensors(sensorStatus, this._poseSource);
     let detail1 = '';
     let detail2 = '';
     if (focus === FOCUS_POSTURE) {
       const c = this._posture.config;
+      const samples = this._poseSource === 'accel'
+        ? 'accel ' + sensorStatus.accel.samples
+        : 'samples ' + sensorStatus.ori.count;
       detail1 = 'Alert when head down/up ≥ ' + c.pitchBadDeg + '° or tilt ≥ ' + c.rollBadDeg + '° for ' + Math.round(c.dwellMs / 1000) + ' s';
       detail2 = 'Good posture ' + goodPercent(p.stats) + '% · alerts ' + p.stats.alerts +
-        (demo ? ' · ' + this._demo.label : ' · samples ' + this._readingCount);
+        (demo ? ' · ' + this._demo.label : ' · ' + samples);
     } else if (focus === FOCUS_DISTANCE) {
       const c = this._distance.config;
       detail1 = 'Alert under ' + c.tooCloseCm + ' cm for ' + Math.round(c.dwellMs / 1000) + ' s · one photo every ' + Math.round(CAPTURE_INTERVAL_MS / 1000) + ' s';
@@ -822,6 +849,9 @@ export default {
     } else if (focus === FOCUS_CALIBRATE) {
       detail1 = 'Place the marker ' + this._settings.calibrationCm + ' cm from your eyes, look at it, then tap';
       detail2 = 'K = ' + d.kNorm.toFixed(3) + (d.calibrated ? ' (calibrated)' : ' (estimated from the camera field of view)');
+    } else if (focus === FOCUS_SENSORS) {
+      detail1 = sensorText.line1;
+      detail2 = sensorText.line2;
     } else if (focus === FOCUS_VOICE) {
       detail1 = 'Speaks a short prompt when an alert appears';
       detail2 = 'Now: ' + (this._settings.voice ? 'on' : 'off') + ' · at least 20 s between prompts';
@@ -833,9 +863,10 @@ export default {
     // Hint
     let hint = '';
     if (alert) hint = 'Tap or nod: dismiss · Double tap: exit';
-    else if (focus === FOCUS_POSTURE) hint = (this._sensor || demo ? 'Tap: reset posture baseline' : 'Tap: reconnect sensor') + ' · Swipe: switch · Double tap: exit';
+    else if (focus === FOCUS_POSTURE) hint = (this._hub.pose() || this._hub.hasPendingSource() || demo ? 'Tap: reset posture baseline' : 'Tap: reconnect sensor') + ' · Swipe: switch · Double tap: exit';
     else if (focus === FOCUS_DISTANCE) hint = 'Tap: measure now · Swipe: switch · Double tap: exit';
     else if (focus === FOCUS_CALIBRATE) hint = 'Tap: calibrate · Swipe: switch · Double tap: exit';
+    else if (focus === FOCUS_SENSORS) hint = 'Tap: run the sensor check · Swipe: switch · Double tap: exit';
     else if (focus === FOCUS_VOICE) hint = 'Tap: toggle voice reminders · Swipe: switch · Double tap: exit';
     else hint = 'Tap: toggle demo mode · Swipe: switch · Double tap: exit';
 
@@ -855,6 +886,8 @@ export default {
       calibrateClass: joinClass(['row', focus === FOCUS_CALIBRATE && 'is-focus']),
       calibrateText: 'Calibrate distance at ' + this._settings.calibrationCm + ' cm',
       calibrateState: d.calibrated ? 'Calibrated' : 'Not calibrated',
+      sensorClass: joinClass(['row', focus === FOCUS_SENSORS && 'is-focus']),
+      sensorState: demo ? 'Demo' : sensorText.row,
       voiceClass: joinClass(['row', focus === FOCUS_VOICE && 'is-focus']),
       voiceState: this._settings.voice ? 'On' : 'Off',
       demoClass: joinClass(['row', focus === FOCUS_DEMO && 'is-focus']),
@@ -906,6 +939,10 @@ export default {
       <view class="{{calibrateClass}}">
         <text class="row-text">{{calibrateText}}</text>
         <text class="row-state">{{calibrateState}}</text>
+      </view>
+      <view class="{{sensorClass}}">
+        <text class="row-text">Sensor check</text>
+        <text class="row-state">{{sensorState}}</text>
       </view>
       <view class="{{voiceClass}}">
         <text class="row-text">Voice reminders</text>

@@ -12,7 +12,13 @@ AIUI 0.17's device APIs are Bluetooth, Accelerometer, AbsoluteOrientationSensor,
 | Eye-to-screen distance | The camera takes one low-resolution photo every 20 s, `BarcodeDetector` finds the QR marker on the monitor (payload `WH:50` means a nominal 50 mm side), and the marker's apparent size gives the distance; one tap calibrates at a known distance | Official `samples/scanner` (same photo → WebP decode → barcode pipeline) |
 | Sitting too long | Reminder after 45 minutes of continuous monitoring | — |
 
-The "gyroscope" feature the request asked for is that orientation sensor: the device fuses the gyroscope internally and returns a pose quaternion, which is far more stable than integrating raw angular velocity by hand.
+The orientation sensor fuses the gyroscope internally and returns a pose quaternion, which is far more stable than integrating raw angular velocity by hand. The Page also calls the raw sensors directly, through `agent/lib/sensors.js`:
+
+1. page-private `AbsoluteOrientationSensor` (`enableWorldAwareness()`), then the global `new AbsoluteOrientationSensor()` the official `samples/gyroscope-test` uses, if it stays silent for 3 s;
+2. `Gyroscope`: the baseline is captured only once the head has been still for 0.6 s (up to 6 s extra wait);
+3. `Accelerometer`: gravity tilt (pitch and roll) as the pose source when no orientation data arrives; the Page re-baselines when the source changes.
+
+**Not verified on hardware:** whether the glasses deliver `Gyroscope` / `Accelerometer` data, and the gyroscope unit (assumed rad/s, the Android convention; the AIUI docs do not say). The **Sensor check** row shows each sensor's state, measured Hz, the gyroscope raw magnitude and the gravity magnitude so this can be read off the glasses; tap it to restart all three sensors.
 
 ## Import into AIUI Studio
 
@@ -72,7 +78,7 @@ Before calibration the app uses a constant derived from the Rokid Glasses camera
 
 ## Axis convention (to be verified on the glasses)
 
-`DEFAULT_AXIS_MAP` in `agent/lib/quat.js` assumes the device X axis is the left–right axis (rotation about it is nodding / looking down), Y is vertical (turning) and Z is front–back (tilting), matching the mapping in the official `samples/gyroscope-test`; `pitchDownSign = -1` decides which direction counts as "down". A wrong sign only swaps the Down/Up labels, it never affects whether a deviation is detected. On the glasses put the focus on the posture tile, look down, and check that the angle text says "Down"; flip the sign if not.
+`DEFAULT_AXIS_MAP` in `agent/lib/quat.js` assumes the device X axis is the left–right axis (rotation about it is nodding / looking down), Y is vertical (turning) and Z is front–back (tilting), matching the mapping in the official `samples/gyroscope-test`; `pitchDownSign = -1` decides which direction counts as "down" and `rollRightSign = -1` which direction counts as "tilt right". The sample's crosshair (up for +X, left for +Y) fixes a right-handed frame with X = right, Y = up, Z = toward the wearer; the roll sign follows from that frame and is the part the sample does not exercise. A wrong sign only swaps the Down/Up labels, it never affects whether a deviation is detected. On the glasses put the focus on the posture tile, look down, and check that the angle text says "Down"; flip the sign if not; do the same for Tilt R / Tilt L by tilting your head to the right.
 
 ## Layout
 
@@ -84,7 +90,8 @@ Ink reference canvas 480 × 352 (safe insets 16 px horizontal, 12 px vertical): 
 agent/                     AIUI Studio import root
   AGENTS.md                Agent identity, voice routing rules, capability limits
   app.json                 Page list, CAMERA permission
-  pages/monitor/index.ink  The only Page: sensor, camera, temple input, alerts, demo mode, both layouts
+  lib/imu.js, lib/sensors.js  Gyroscope / accelerometer math and the sensor hub with its fallback chain
+  pages/monitor/index.ink  The only Page: sensors, camera, temple input, alerts, demo mode, both layouts
   lib/quat.js              Quaternion math and the axis convention
   lib/posture.js           Posture state machine (thresholds, dwell, cooldown, statistics)
   lib/distance.js          Marker ranging, calibration, too-close detection

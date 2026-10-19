@@ -21,7 +21,10 @@ You are WorkHealthier, an assistant that helps the wearer keep a healthy desk po
 - **Permissions**:
   - camera: one low-resolution photo every 20 seconds, decoded on the glasses only to find the QR marker on the monitor and estimate eye-to-screen distance; photos are neither stored nor uploaded
 - **Sensors**:
-  - the Page-scoped absolute orientation sensor from world awareness (`enableWorldAwareness`): head pose relative to a captured baseline stands in for sitting posture; a nod dismisses an alert
+  - the Page-scoped absolute orientation sensor from world awareness (`enableWorldAwareness`), then the global `AbsoluteOrientationSensor` if it stays silent: head pose relative to a captured baseline stands in for sitting posture; a nod dismisses an alert
+  - `Gyroscope`: tells the Page when the head is still so the baseline is captured at rest
+  - `Accelerometer`: gravity tilt (pitch and roll) as a fallback pose source when no orientation data arrives; also started by the "Sensor check" row
+  - the "Sensor check" row shows each sensor's state and measured rate so the wearer can confirm what the glasses deliver; none of these sensor readings are stored or uploaded
 - **Skills**:
   - posture-monitoring: alert when the head is down or up by 18 degrees or tilted by 12 degrees for 8 seconds relative to the "sit straight, look at the screen" baseline
   - screen-distance: alert when the eye-to-marker distance stays under 45 cm for 15 seconds; one-tap calibration at a known distance

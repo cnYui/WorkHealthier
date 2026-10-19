@@ -169,6 +169,12 @@ export function createPostureMonitor(options) {
       return true;
     },
 
+    // Baseline for sources that already report angles relative to the moment
+    // of calibration (the accelerometer tilt): the quaternion is the identity.
+    setAngleBaseline(now) {
+      return this.setBaseline([0, 0, 0, 1], now);
+    },
+
     hasBaseline() {
       return state.baseline !== null;
     },

@@ -7,7 +7,7 @@
 | Location | What it is |
 |---|---|
 | `agent/` | **AIUI Studio import root** (contains `app.json` directly), AIUI 0.17.0, one Page `pages/monitor/index` |
-| `agent/lib/` | Pure logic with Node tests: `quat.js`, `posture.js`, `distance.js`, `session.js`, `capture.js`, `temple.js`, `demo.js`, `env.js`; `webp.js` + `vendor/webpjs/` are copied verbatim from the official `samples/scanner` |
+| `agent/lib/` | Pure logic with Node tests: `quat.js`, `imu.js`, `sensors.js`, `posture.js`, `distance.js`, `session.js`, `capture.js`, `temple.js`, `demo.js`, `env.js`; `webp.js` + `vendor/webpjs/` are copied verbatim from the official `samples/scanner` |
 | `tests/` | `npm test` (Node 20+, `node --test`); not imported into Studio |
 | `docs/aiui-audit.md` | Generated UX/capability audit; regenerate after every change under `agent/` (see below) |
 | `docs/marker.html`, `docs/marker/` | QR marker shown on the monitor for distance estimation (payload `WH:<mm>`) |
@@ -64,3 +64,13 @@
 - Verified locally: `npm test` (all pure logic incl. a full demo replay), strict project validation exit 0, `aix pack`/`list` (no `.git`/`.aiui-evidence` entries), `aix preview` layout/focus/tap/demo fallback in the browser.
 - Verified in Studio (2026-09-12): import, `/debug` chat card in the compact layout (constant pose → Good 0°, photo rejected → Stopped).
 - Not verified: the 480 × 352 effect preview interactions in Studio (swipes, taps, demo fallback are not recorded with screenshots) and everything on physical glasses (see README "Status"). Simulator results are not device results; the Skill's release gates need signed device evidence.
+
+## aiui-global.rokid.com (Studio 1.2.0, measured 2026-10-18/19)
+
+- Import: use the **Chinese UI** (`?lang=zh-CN`, user menu → language). In the English UI the GitHub subdirectory import fails with "GitHub ref not found: main/agent": the resolver tries `main/agent` as a ref first and its fallback to `main` + `agent` compares a translated message with an untranslated prefix. Switch back to English afterwards.
+- After import the project is local only ("待上传"). Sidebar item menu → **上传云端** registers it (`saveAIUIAgent`, version bumps each time). The 真机调试 form's **重新打包并保存** calls `updateThirdAgent`, which answered `{"code":10001,"msg":"系统异常"}` every time (icon, name, category, description all filled): metadata (name, icon, category) therefore never reached the cloud; code did. Cause unknown, server side.
+- The 提交 tab is the store review form (feature intro, opening line, 3–5 preview media incl. one MP4, changelog, 提交审核). Not submitted.
+- The simulator's "环境模拟" is ambient light only; it has no IMU or sensor simulation.
+- Icon: `docs/tools/gen_icon.py` draws a 32×32 pixel-art icon into `docs/icon/` (the Studio form takes PNG/JPG/GIF, 1:1).
+- The official `samples/gyroscope-test` reads `AbsoluteOrientationSensor` (global constructor, 60 Hz), not `Gyroscope`; its crosshair uses rotation-vector Y for left/right and X for up/down.
+- `Gyroscope` and `Accelerometer` are documented (`documentation/3-api/device`) but their data on the glasses is unverified; `lib/sensors.js` falls back orientation (page) → orientation (global) → accelerometer tilt → demo.

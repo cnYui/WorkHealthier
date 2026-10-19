@@ -50,7 +50,8 @@ test('headAnglesFromRelative applies the axis map and sign conventions', () => {
   near(a.pitch, 15, 1e-6); // positive pitch = looking down
   near(a.roll, 0, 1e-6);
 
-  const tilt = quaternionFromAxisAngle([0, 0, 1], 10);
+  // Right-handed frame, Z toward the wearer: tilting right is a rotation about -Z.
+  const tilt = quaternionFromAxisAngle([0, 0, 1], -10);
   const b = headAnglesFromRelative(tilt, DEFAULT_AXIS_MAP);
   near(b.roll, 10, 1e-6);
   near(b.pitch, 0, 1e-6);
